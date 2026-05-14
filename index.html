@@ -1,0 +1,786 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl" class="h-full">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SoloShadow | محول الروايات إلى EPUB</title>
+  
+  <!-- Fonts: Cairo for modern Arabic typography -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;900&display=swap" rel="stylesheet">
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Cairo', 'sans-serif'],
+            mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'monospace'],
+          },
+          colors: {
+            brand: {
+              50: '#f5f3ff',
+              100: '#ede9fe',
+              500: '#8b5cf6', // Violet
+              600: '#7c3aed',
+              700: '#6d28d9',
+              900: '#4c1d95',
+            },
+            sepia: {
+              50: '#fdf8f6',
+              100: '#f2e8e5',
+              800: '#5c4b4b',
+              900: '#423535',
+            }
+          },
+          animation: {
+            'float': 'float 6s ease-in-out infinite',
+            'pulse-slow': 'pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+            'book-open': 'bookOpen 1.5s cubic-bezier(0.16, 1, 0.3, 1) forwards',
+            'slide-up': 'slideUp 0.6s ease-out forwards',
+            'fade-in': 'fadeIn 0.5s ease-out forwards',
+          },
+          keyframes: {
+            float: {
+              '0%, 100%': { transform: 'translateY(0)' },
+              '50%': { transform: 'translateY(-20px)' },
+            },
+            bookOpen: {
+              '0%': { transform: 'rotateY(0)' },
+              '100%': { transform: 'rotateY(-180deg)' },
+            },
+            slideUp: {
+              '0%': { transform: 'translateY(20px)', opacity: '0' },
+              '100%': { transform: 'translateY(0)', opacity: '1' },
+            },
+            fadeIn: {
+              '0%': { opacity: '0' },
+              '100%': { opacity: '1' },
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    /* Glassmorphism Utilities */
+    .glass {
+      background: rgba(255, 255, 255, 0.7);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.5);
+    }
+    
+    .dark .glass {
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .glass-card {
+      background: rgba(255, 255, 255, 0.85);
+      box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.07);
+      backdrop-filter: blur(8px);
+      border-radius: 1rem;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+    }
+
+    .dark .glass-card {
+      background: rgba(30, 41, 59, 0.7);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    /* Sepia Theme for Preview */
+    .theme-sepia .bg-slate-50 { background-color: #fdf8f6; color: #423535; }
+    .theme-sepia .text-slate-900 { color: #423535; }
+    .theme-sepia .text-slate-500 { color: #8c7b7b; }
+    .theme-sepia .glass-card { background: rgba(253, 248, 246, 0.9); border-color: #f2e8e5; }
+    .theme-sepia .glass { background: rgba(253, 248, 246, 0.8); border-color: #f2e8e5; }
+
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar {
+      width: 8px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 4px;
+    }
+    .dark ::-webkit-scrollbar-thumb {
+      background: #475569;
+    }
+
+    /* 3D Book CSS */
+    .book-container {
+      perspective: 1000px;
+    }
+    .book {
+      width: 140px;
+      height: 200px;
+      position: relative;
+      transform-style: preserve-3d;
+      transform: rotateY(-30deg) rotateX(10deg);
+      transition: transform 1s ease;
+      box-shadow: 20px 20px 30px rgba(0,0,0,0.2);
+    }
+    .book-cover {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(135deg, #7c3aed, #4c1d95);
+      border-radius: 4px 8px 8px 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-weight: bold;
+      font-size: 1.2rem;
+      transform: translateZ(25px);
+      z-index: 2;
+      border: 2px solid rgba(255,255,255,0.2);
+    }
+    .book-spine {
+      position: absolute;
+      width: 50px;
+      height: 100%;
+      background: #5b21b6;
+      transform: rotateY(-90deg) translateZ(25px);
+      left: -25px;
+      border-radius: 4px 0 0 4px;
+    }
+    .book-pages {
+      position: absolute;
+      width: 135px;
+      height: 195px;
+      background: #f8fafc;
+      transform: rotateY(0deg) translateZ(0);
+      right: 2px;
+      top: 2.5px;
+      border-radius: 0 6px 6px 0;
+      z-index: 1;
+      transition: transform 1.5s ease-in-out;
+      transform-origin: left;
+      box-shadow: inset 5px 0 10px rgba(0,0,0,0.05);
+    }
+    .book-cover::after {
+      content: '';
+      position: absolute;
+      left: 10px;
+      top: 0;
+      bottom: 0;
+      width: 2px;
+      background: rgba(0,0,0,0.2);
+    }
+  </style>
+</head>
+<body class="h-full bg-slate-50 text-slate-900 transition-colors duration-300 overflow-x-hidden selection:bg-brand-500 selection:text-white">
+  
+  <!-- Background Decoration -->
+  <div class="fixed inset-0 pointer-events-none overflow-hidden z-0">
+    <div class="absolute top-[-10%] right-[-5%] w-[500px] h-[500px] bg-brand-500/20 rounded-full blur-3xl animate-pulse-slow"></div>
+    <div class="absolute bottom-[-10%] left-[-5%] w-[600px] h-[600px] bg-blue-500/10 rounded-full blur-3xl"></div>
+  </div>
+
+  <!-- Toast Container -->
+  <div id="toast-container" class="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 flex flex-col gap-2 w-full max-w-sm px-4"></div>
+
+  <!-- Main App Container -->
+  <main class="relative z-10 min-h-full flex flex-col items-center justify-center p-4 md:p-8">
+    
+    <!-- Navbar -->
+    <nav class="w-full max-w-4xl flex justify-between items-center mb-8 glass p-4 rounded-2xl animate-fade-in shadow-sm">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 bg-gradient-to-br from-brand-500 to-indigo-700 rounded-xl flex items-center justify-center text-white shadow-lg shadow-brand-500/30">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+          </svg>
+        </div>
+        <div>
+          <h1 class="font-bold text-xl tracking-tight">SoloShadow</h1>
+          <p class="text-xs text-slate-500 dark:text-slate-400 font-mono">v2.0 Beta</p>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-3">
+        <a href="https://t.me/soloshadowbot" target="_blank" class="hidden sm:flex items-center gap-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:text-brand-600 dark:hover:text-brand-400 transition-colors">
+          <span>تابعنا</span>
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.562 8.161c-.18 1.897-.962 6.502-1.359 8.627-.168.9-.5 1.201-.82 1.23-.697.064-1.226-.461-1.901-.903-1.056-.692-1.653-1.123-2.678-1.799-1.185-.781-.417-1.21.258-1.911.177-.184 3.247-2.977 3.307-3.23.007-.032.015-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.139-5.062 3.345-.479.329-.913.489-1.302.481-.428-.009-1.252-.242-1.865-.442-.751-.244-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.831-2.529 6.998-3.015 3.333-1.386 4.025-1.627 4.477-1.635.099-.002.321.023.465.141.121.1.154.234.169.337.015.103.034.336.019.518z"/></svg>
+        </a>
+        <button id="theme-toggle" class="p-2 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-800 transition-all focus:ring-2 focus:ring-brand-500" aria-label="Toggle Theme">
+          <!-- Sun Icon -->
+          <svg id="icon-sun" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 hidden dark:block text-yellow-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+          </svg>
+          <!-- Moon Icon -->
+          <svg id="icon-moon" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 block dark:hidden text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 24.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+          </svg>
+        </button>
+      </div>
+    </nav>
+
+    <div class="w-full max-w-2xl mx-auto space-y-8">
+      
+      <!-- Welcome / Input View -->
+      <section id="view-welcome" class="text-center space-y-8 animate-slide-up">
+        <!-- Animated Book Illustration -->
+        <div class="book-container w-full flex justify-center py-10">
+          <div id="hero-book" class="book">
+            <div class="book-spine"></div>
+            <div class="book-cover flex flex-col items-center">
+               <span class="text-2xl mb-2">SS</span>
+               <span class="text-xs uppercase tracking-widest opacity-80">Novels</span>
+            </div>
+            <div id="book-pages-anim" class="book-pages"></div>
+          </div>
+        </div>
+
+        <div class="space-y-4">
+          <h2 class="text-3xl md:text-5xl font-black text-slate-900 dark:text-white leading-tight">
+            حول رواياتك <br>
+            <span class="text-transparent bg-clip-text bg-gradient-to-r from-brand-500 to-indigo-600">إلى EPUB</span>
+          </h2>
+          <p class="text-slate-500 dark:text-slate-400 text-lg max-w-md mx-auto">
+            أدخل رابط الرواية، وسنقوم بالباقي. دعم كامل للتنسيق، الغلاف، والفهرس.
+          </p>
+        </div>
+
+        <div class="glass-card p-2 max-w-lg mx-auto transform transition-all hover:scale-[1.01] focus-within:ring-2 focus-within:ring-brand-500/50">
+          <div class="flex flex-col sm:flex-row gap-2">
+            <div class="relative flex-grow">
+              <div class="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                <svg class="h-5 w-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>
+              </div>
+              <input type="url" id="url-input" 
+                class="w-full h-12 pr-10 pl-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border-none focus:ring-0 text-slate-900 dark:text-white placeholder-slate-400 outline-none transition-colors" 
+                placeholder="أدخل رابط الفصل أو الرواية (https://...)"
+                autocomplete="off">
+            </div>
+            <button id="btn-convert" class="h-12 px-8 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-bold shadow-lg shadow-brand-500/30 transition-all active:scale-95 whitespace-nowrap flex items-center justify-center gap-2">
+              <span>تحويل</span>
+              <svg class="w-5 h-5 rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+            </button>
+          </div>
+          <div class="px-4 py-2 flex items-center justify-between text-xs text-slate-400">
+            <span>يدعم: NovelUpdates, RoyalRoad, Wattpad (Demo)</span>
+            <span class="flex items-center gap-1"><span class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span> النظام نشط</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Processing View -->
+      <section id="view-processing" class="hidden glass-card p-8 text-center space-y-6 relative overflow-hidden">
+        <!-- Scanning Effect -->
+        <div class="absolute inset-0 bg-gradient-to-b from-transparent via-brand-500/5 to-transparent animate-pulse pointer-events-none"></div>
+        
+        <div class="relative z-10">
+          <div class="w-24 h-24 mx-auto mb-6 relative">
+            <div class="absolute inset-0 rounded-full border-4 border-slate-200 dark:border-slate-700"></div>
+            <div class="absolute inset-0 rounded-full border-4 border-brand-500 border-t-transparent animate-spin"></div>
+            <svg class="w-10 h-10 text-brand-500 absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
+          </div>
+
+          <h3 class="text-2xl font-bold text-slate-900 dark:text-white mb-2">جاري معالجة الرواية...</h3>
+          <p id="process-status" class="text-slate-500 dark:text-slate-400 font-mono text-sm">الاتصال بالموقع...</p>
+
+          <!-- Progress Bar -->
+          <div class="max-w-md mx-auto mt-6">
+            <div class="flex justify-between text-sm mb-2 font-mono">
+              <span id="progress-percent" class="text-brand-600 dark:text-brand-400 font-bold">0%</span>
+              <span id="progress-chapter" class="text-slate-500">0 / 0 فصل</span>
+            </div>
+            <div class="h-3 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+              <div id="progress-bar" class="h-full bg-gradient-to-r from-brand-500 to-indigo-600 rounded-full transition-all duration-300 ease-out w-0 relative">
+                <div class="absolute inset-0 bg-white/20 animate-[shimmer_2s_infinite]"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="mt-4 text-xs text-slate-400 flex justify-center gap-4">
+             <span id="eta">الوقت المتبقي: حساب...</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Success View -->
+      <section id="view-success" class="hidden animate-slide-up">
+        <div class="glass-card overflow-hidden">
+          <div class="bg-gradient-to-r from-brand-600 to-indigo-700 p-6 text-white text-center relative">
+             <div class="absolute top-0 left-0 w-full h-full opacity-10 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAiIGhlaWdodD0iMjAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGNpcmNsZSBjeD0iMiIgY3k9IjIiIHI9IjIiIGZpbGw9IiNmZmYiLz48L3N2Zz4=')]"></div>
+             <h3 class="text-2xl font-bold relative z-10">تم التحويل بنجاح!</h3>
+             <p class="text-indigo-100 relative z-10">ملف EPUB جاهز للتحميل</p>
+          </div>
+          
+          <div class="p-6 md:p-8 flex flex-col md:flex-row gap-8 items-center">
+            <!-- Cover Preview -->
+            <div class="relative group shrink-0">
+              <div class="w-32 h-48 md:w-40 md:h-60 bg-slate-200 dark:bg-slate-800 rounded-lg shadow-2xl overflow-hidden relative z-10 border border-white/20">
+                 <img id="result-cover" src="https://picsum.photos/seed/novel/200/300" alt="Cover" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110">
+              </div>
+              <div class="absolute -bottom-4 -right-4 w-full h-full bg-brand-500/20 rounded-lg blur-xl group-hover:bg-brand-500/30 transition-all"></div>
+            </div>
+
+            <!-- Details & Actions -->
+            <div class="flex-grow text-center md:text-right w-full space-y-4">
+              <div>
+                <h2 id="result-title" class="text-2xl font-bold text-slate-900 dark:text-white mb-1">عنوان الرواية</h2>
+                <p class="text-slate-500 text-sm">بواسطة <span id="result-author">Solo Shadow Bot</span></p>
+              </div>
+
+              <div class="grid grid-cols-2 gap-4 text-sm text-slate-600 dark:text-slate-400 py-2 border-y border-slate-200 dark:border-slate-700">
+                <div class="flex flex-col">
+                  <span class="text-xs uppercase opacity-60">عدد الفصول</span>
+                  <span id="result-chapters" class="font-bold text-slate-900 dark:text-white">0</span>
+                </div>
+                <div class="flex flex-col">
+                  <span class="text-xs uppercase opacity-60">الحجم</span>
+                  <span class="font-bold text-slate-900 dark:text-white">2.4 MB</span>
+                </div>
+              </div>
+
+              <div class="flex flex-col sm:flex-row gap-3 pt-2">
+                <button id="btn-download" class="flex-1 bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:bg-slate-800 dark:hover:bg-slate-100 py-3 rounded-xl font-bold shadow-lg transition-transform active:scale-95 flex items-center justify-center gap-2">
+                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                  تحميل EPUB
+                </button>
+                <button id="btn-share" class="px-4 py-3 bg-brand-50 dark:bg-brand-900/30 text-brand-600 dark:text-brand-400 hover:bg-brand-100 dark:hover:bg-brand-900/50 rounded-xl font-medium transition-all flex items-center justify-center gap-2 border border-brand-200 dark:border-brand-800">
+                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"/></svg>
+                  مشاركة
+                </button>
+              </div>
+            </div>
+            
+            <!-- QR Code Placeholder (Hidden on small mobile, visible on desktop) -->
+            <div class="hidden lg:block w-32 h-32 bg-white p-2 rounded-lg shrink-0 border border-slate-200">
+               <!-- Simulated QR via CSS Grid -->
+               <div class="w-full h-full grid grid-cols-6 grid-rows-6 gap-0.5 bg-slate-900" id="qr-code">
+                 <!-- JS fills this -->
+               </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="mt-6 flex justify-center">
+             <button id="btn-new-convert" class="text-slate-500 hover:text-brand-600 text-sm font-medium flex items-center gap-1 transition-colors">
+               تحويل رواية أخرى
+               <svg class="w-4 h-4 rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"/></svg>
+             </button>
+        </div>
+      </section>
+      
+      <!-- History Section -->
+      <section id="section-history" class="w-full animate-fade-in mt-8 hidden">
+        <h3 class="text-lg font-bold text-slate-800 dark:text-slate-200 mb-4 flex items-center gap-2">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+          سجل التحويلات
+        </h3>
+        <div id="history-list" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+           <!-- History items injected here -->
+        </div>
+      </section>
+
+      <!-- Footer -->
+      <footer class="text-center pt-12 pb-6 text-slate-400 text-sm">
+        <div class="flex justify-center gap-4 mb-4">
+           <a href="#" class="hover:text-brand-500 transition-colors">المطور</a>
+           <span>•</span>
+           <a href="#" class="hover:text-brand-500 transition-colors">الدعم الفني</a>
+           <span>•</span>
+           <a href="#" class="hover:text-brand-500 transition-colors">قناة تيليجرام</a>
+        </div>
+        <p>&copy; 2023 SoloShadow. All rights reserved.</p>
+      </footer>
+
+    </div>
+  </main>
+
+  <!-- Scripts -->
+  <script>
+    // --- Configuration & State ---
+    const CONFIG = {
+      supportedSites: ['novelupdates.com', 'royalroad.com', 'wattpad.com', 'mtlnovel.com', 'demo.local'],
+      footerText: 'Created by Solo Shadow Bot\nتابعنا على تيليجرام',
+      creator: 'Solo Shadow'
+    };
+
+    const state = {
+      theme: localStorage.getItem('theme') || 'light',
+      history: JSON.parse(localStorage.getItem('soloHistory') || '[]'),
+      isConverting: false,
+      novelData: null
+    };
+
+    // --- DOM Elements ---
+    const els = {
+      body: document.body,
+      themeToggle: document.getElementById('theme-toggle'),
+      viewWelcome: document.getElementById('view-welcome'),
+      viewProcessing: document.getElementById('view-processing'),
+      viewSuccess: document.getElementById('view-success'),
+      urlInput: document.getElementById('url-input'),
+      btnConvert: document.getElementById('btn-convert'),
+      btnDownload: document.getElementById('btn-download'),
+      btnShare: document.getElementById('btn-share'),
+      btnNewConvert: document.getElementById('btn-new-convert'),
+      progressBar: document.getElementById('progress-bar'),
+      progressPercent: document.getElementById('progress-percent'),
+      progressChapter: document.getElementById('progress-chapter'),
+      processStatus: document.getElementById('process-status'),
+      eta: document.getElementById('eta'),
+      heroBook: document.getElementById('hero-book'),
+      bookPages: document.getElementById('book-pages-anim'),
+      historyList: document.getElementById('history-list'),
+      sectionHistory: document.getElementById('section-history'),
+      qrCode: document.getElementById('qr-code'),
+      toastContainer: document.getElementById('toast-container'),
+      resultTitle: document.getElementById('result-title'),
+      resultChapters: document.getElementById('result-chapters'),
+      resultCover: document.getElementById('result-cover')
+    };
+
+    // --- Initialization ---
+    function init() {
+      applyTheme(state.theme);
+      renderHistory();
+      generateQRPattern();
+      
+      // Event Listeners
+      els.themeToggle.addEventListener('click', toggleTheme);
+      els.btnConvert.addEventListener('click', handleConvert);
+      els.urlInput.addEventListener('keypress', (e) => e.key === 'Enter' && handleConvert());
+      els.btnDownload.addEventListener('click', handleDownload);
+      els.btnShare.addEventListener('click', handleShare);
+      els.btnNewConvert.addEventListener('click', resetApp);
+
+      // Animation triggers
+      setTimeout(() => {
+        els.heroBook.style.transform = 'rotateY(-30deg) rotateX(10deg) translateY(0)';
+      }, 100);
+    }
+
+    // --- Theme Handling ---
+    function toggleTheme() {
+      state.theme = state.theme === 'dark' ? 'light' : 'dark';
+      localStorage.setItem('theme', state.theme);
+      applyTheme(state.theme);
+    }
+
+    function applyTheme(theme) {
+      if (theme === 'dark') {
+        document.documentElement.classList.add('dark');
+      } else {
+        document.documentElement.classList.remove('dark');
+      }
+    }
+
+    // --- Core Logic ---
+
+    async function handleConvert() {
+      const url = els.urlInput.value.trim();
+      
+      if (!url) {
+        showToast('الرجاء إدخال رابط صحيح', 'error');
+        els.urlInput.focus();
+        return;
+      }
+
+      if (!isValidUrl(url)) {
+        showToast('صيغة الرابط غير صحيحة', 'error');
+        return;
+      }
+
+      // Check supported sites (Simulation)
+      const hostname = new URL(url).hostname.replace('www.', '');
+      const isSupported = CONFIG.supportedSites.some(site => hostname.includes(site)) || hostname.includes('demo');
+
+      if (!isSupported) {
+        showToast('عذراً، هذا الموقع غير مدعوم حالياً', 'error');
+        return;
+      }
+
+      // Start Conversion Process
+      startConversionUI(url);
+      
+      try {
+        // Simulate Scraping Process
+        await simulateScraping(url);
+        showSuccessUI();
+      } catch (error) {
+        console.error(error);
+        showToast('حدث خطأ أثناء المعالجة', 'error');
+        resetApp();
+      }
+    }
+
+    function isValidUrl(string) {
+      try {
+        new URL(string);
+        return true;
+      } catch (_) {
+        return false;
+      }
+    }
+
+    function startConversionUI(url) {
+      state.isConverting = true;
+      
+      // Transition UI
+      els.viewWelcome.classList.add('hidden');
+      els.viewProcessing.classList.remove('hidden');
+      els.viewProcessing.classList.add('animate-fade-in');
+
+      // Animate Book
+      els.bookPages.classList.add('animate-book-open'); // Open the book
+      els.heroBook.style.opacity = '0';
+      els.heroBook.style.transition = 'opacity 0.5s';
+    }
+
+    // --- Simulation Engine ---
+    function simulateScraping(url) {
+      return new Promise((resolve) => {
+        // Mock Data Generator based on URL hash or random
+        const seed = url.length;
+        const totalChapters = Math.floor(Math.random() * 100) + 20; // 20 to 120 chapters
+        const titles = ['بداية النهاية', 'رحلة المجهول', 'سر القديسين', 'الظلام يحوم', 'انتصار النور', 'العهد الأخير'];
+        const novelTitle = "رواية الأحلام المفقودة " + seed; 
+
+        state.novelData = {
+          title: novelTitle,
+          chapters: totalChapters,
+          url: url,
+          cover: `https://picsum.photos/seed/${seed}/200/300`,
+          date: new Date().toLocaleDateString('ar-EG')
+        };
+
+        let current = 0;
+        const startTime = Date.now();
+        
+        const interval = setInterval(() => {
+          if (current >= totalChapters) {
+            clearInterval(interval);
+            // Add to history
+            addToHistory(state.novelData);
+            resolve();
+            return;
+          }
+
+          // Progress Logic
+          current++;
+          const percent = Math.round((current / totalChapters) * 100);
+          const elapsed = Date.now() - startTime;
+          const speed = current / (elapsed / 1000); // chapters per sec
+          const remaining = Math.ceil((totalChapters - current) / speed);
+          
+          // Update UI
+          updateProgress(percent, current, totalChapters, remaining);
+          
+          // Random status text
+          const statuses = [
+            'جاري تحميل الفصل...',
+            'استخراج المحتوى...',
+            'تنسيق النصوص...',
+            'إضافة الغلاف...',
+            'إنشاء الفهرس...'
+          ];
+          els.processStatus.textContent = statuses[Math.floor(Math.random() * statuses.length)] + ` (${current})`;
+
+        }, 50); // Fast simulation
+      });
+    }
+
+    function updateProgress(percent, current, total, secondsRemaining) {
+      els.progressBar.style.width = `${percent}%`;
+      els.progressPercent.textContent = `${percent}%`;
+      els.progressChapter.textContent = `${current} / ${total} فصل`;
+      
+      let timeStr = secondsRemaining < 60 ? `${secondsRemaining} ثانية` : `${Math.ceil(secondsRemaining/60)} دقيقة`;
+      els.eta.textContent = `الوقت المتبقي: ${timeStr}`;
+    }
+
+    function showSuccessUI() {
+      state.isConverting = false;
+      
+      els.viewProcessing.classList.add('hidden');
+      els.viewSuccess.classList.remove('hidden');
+      
+      // Fill Data
+      els.resultTitle.textContent = state.novelData.title;
+      els.resultChapters.textContent = state.novelData.chapters;
+      els.resultCover.src = state.novelData.cover;
+
+      // Reset Book Animation for next time (hidden)
+      els.bookPages.classList.remove('animate-book-open');
+      els.heroBook.style.transform = 'rotateY(-30deg) rotateX(10deg)';
+      els.heroBook.style.opacity = '1';
+      
+      showToast('تم إنشاء الملف بنجاح!', 'success');
+      triggerConfetti();
+    }
+
+    function resetApp() {
+      els.urlInput.value = '';
+      els.viewSuccess.classList.add('hidden');
+      els.viewWelcome.classList.remove('hidden');
+      els.viewWelcome.classList.add('animate-slide-up');
+      els.progressBar.style.width = '0%';
+      els.processStatus.textContent = 'الاتصال بالموقع...';
+      renderHistory(); // Refresh history in case we re-downloaded
+    }
+
+    // --- Download & File Logic ---
+
+    function handleDownload() {
+      // Simulate EPUB Generation
+      // In a real app without backend, we create a Blob.
+      // Since we can't include a Zip library, we create a dummy file named .epub
+      // For the sake of this demo being a "UI Tool", the interaction is key.
+      
+      const content = `
+        EPUB Simulation Generated by SoloShadow
+        Title: ${state.novelData.title}
+        Chapters: ${state.novelData.chapters}
+        Footer: ${CONFIG.footerText.replace(/\n/g, ' | ')}
+      `;
+      
+      const blob = new Blob([content], { type: 'application/octet-stream' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `${state.novelData.title}.epub`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      showToast('بدء التحميل...', 'success');
+    }
+
+    function handleShare() {
+      const shareText = `حولت رواية "${state.novelData.title}" باستخدام SoloShadow!`;
+      const dummyUrl = "https://soloshadow.app/download/x9z8q7"; // Dummy link
+      
+      navigator.clipboard.writeText(dummyUrl).then(() => {
+        showToast('تم نسخ رابط التحميل!', 'success');
+      }).catch(() => {
+        showToast('فشل النسخ', 'error');
+      });
+    }
+
+    // --- History Management ---
+
+    function addToHistory(novel) {
+      const exists = state.history.find(h => h.title === novel.title);
+      if (!exists) {
+        state.history.unshift(novel);
+        if (state.history.length > 5) state.history.pop(); // Keep last 5
+        localStorage.setItem('soloHistory', JSON.stringify(state.history));
+        renderHistory();
+      }
+    }
+
+    function renderHistory() {
+      if (state.history.length === 0) {
+        els.sectionHistory.classList.add('hidden');
+        return;
+      }
+
+      els.sectionHistory.classList.remove('hidden');
+      els.historyList.innerHTML = state.history.map(item => `
+        <div class="glass-card p-4 flex items-center gap-4 hover:bg-white/50 dark:hover:bg-slate-800/50 transition-colors group cursor-pointer" onclick="loadFromHistory('${item.title}')">
+          <img src="${item.cover}" class="w-12 h-16 object-cover rounded shadow-sm">
+          <div class="flex-grow text-right">
+            <h4 class="font-bold text-slate-900 dark:text-slate-100 line-clamp-1">${item.title}</h4>
+            <p class="text-xs text-slate-500">${item.chapters} فصل • ${item.date}</p>
+          </div>
+          <button class="opacity-0 group-hover:opacity-100 p-2 text-brand-600 bg-brand-50 dark:bg-brand-900/50 rounded-lg transition-opacity">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+          </button>
+        </div>
+      `).join('');
+    }
+
+    window.loadFromHistory = function(title) {
+      const item = state.history.find(h => h.title === title);
+      if (item) {
+        state.novelData = item;
+        els.urlInput.value = item.url; // Just to show something in input
+        showSuccessUI(); // Skip directly to success
+      }
+    };
+
+    // --- Utilities ---
+
+    function showToast(message, type = 'info') {
+      const toast = document.createElement('div');
+      const colors = type === 'error' ? 'bg-red-500' : (type === 'success' ? 'bg-green-600' : 'bg-slate-800');
+      
+      toast.className = `${colors} text-white px-6 py-3 rounded-xl shadow-xl transform translate-y-[-20px] opacity-0 transition-all duration-300 flex items-center gap-3 font-medium`;
+      toast.innerHTML = `
+        <span>${message}</span>
+      `;
+      
+      els.toastContainer.appendChild(toast);
+      
+      // Animate In
+      requestAnimationFrame(() => {
+        toast.classList.remove('translate-y-[-20px]', 'opacity-0');
+      });
+
+      // Remove after 3s
+      setTimeout(() => {
+        toast.classList.add('opacity-0', 'translate-y-[-20px]');
+        setTimeout(() => toast.remove(), 300);
+      }, 3000);
+    }
+
+    function generateQRPattern() {
+      // Create a visually random grid to simulate a QR code
+      const cells = 36;
+      let html = '';
+      for(let i=0; i<cells; i++) {
+        // Randomly black cells, but keep corners mostly clear for "QR look"
+        const isBlack = Math.random() > 0.5;
+        html += `<div class="w-full h-full ${isBlack ? 'bg-slate-900' : 'bg-white'}"></div>`;
+      }
+      els.qrCode.innerHTML = html;
+    }
+
+    function triggerConfetti() {
+      // Simple Canvas Confetti
+      const colors = ['#7c3aed', '#8b5cf6', '#a78bfa', '#c4b5fd'];
+      for (let i = 0; i < 50; i++) {
+        const conf = document.createElement('div');
+        conf.style.position = 'fixed';
+        conf.style.width = '10px';
+        conf.style.height = '10px';
+        conf.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
+        conf.style.left = '50%';
+        conf.style.top = '50%';
+        conf.style.zIndex = '9999';
+        conf.style.pointerEvents = 'none';
+        document.body.appendChild(conf);
+
+        const angle = Math.random() * Math.PI * 2;
+        const velocity = 5 + Math.random() * 10;
+        const x = Math.cos(angle) * velocity * 20;
+        const y = Math.sin(angle) * velocity * 20;
+
+        conf.animate([
+          { transform: 'translate(0,0) scale(1)', opacity: 1 },
+          { transform: `translate(${x}px, ${y}px) scale(0)`, opacity: 0 }
+        ], {
+          duration: 1000,
+          easing: 'cubic-bezier(0, .9, .57, 1)',
+        }).onfinish = () => conf.remove();
+      }
+    }
+
+    // --- Start ---
+    init();
+
+  </script>
+</body>
+</html>
